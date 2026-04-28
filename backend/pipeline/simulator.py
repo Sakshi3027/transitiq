@@ -47,27 +47,40 @@ def is_peak_hour(dt: datetime) -> bool:
     return is_weekday and (morning_peak or evening_peak)
 
 
-def generate_delay(route: dict, weather: str, peak: bool, special_event: bool) -> float:
-    """Simulate realistic delay in minutes based on conditions."""
-    base_delay = random.gauss(mu=2.5, sigma=4.0)  # avg 2.5 min delay, std 4
+def generate_delay(route: dict, weather: str, peak: bool, special_event: bool, hour: int = 12) -> float:
+    """Simulate realistic delay with stronger feature signal for ML."""
 
-    # Route type modifier — buses get delayed more than subways
+    # Base delay varies clearly by route type
     if route["type"] == "bus":
-        base_delay *= 1.4
+        base_delay = random.gauss(mu=5.0, sigma=3.0)
+    else:
+        base_delay = random.gauss(mu=2.0, sigma=1.5)
 
-    # Weather modifier
+    # Weather has a strong clear effect
     base_delay *= WEATHER_DELAY_MULTIPLIER[weather]
 
-    # Peak hour doubles delay probability
+    # Peak hour adds a fixed significant bump
     if peak:
-        base_delay *= 1.6
+        base_delay += random.uniform(4, 10)
 
-    # Special event nearby adds big delay
+    # Late night is faster (less traffic)
+    if hour >= 23 or hour <= 5:
+        base_delay *= 0.4
+
+    # Special event adds a big predictable jump
     if special_event:
-        base_delay += random.uniform(5, 20)
+        base_delay += random.uniform(10, 25)
 
-    # Inject rare severe delay spike (anomaly)
-    if random.random() < 0.03:  # 3% chance of anomaly
+    # Snow and heavy rain always cause severe delays
+    if weather == "snow":
+        base_delay += random.uniform(5, 15)
+    elif weather == "heavy_rain":
+        base_delay += random.uniform(3, 10)
+    elif weather == "thunderstorm":
+        base_delay += random.uniform(4, 12)
+
+    # Inject rare severe delay spike (anomaly) — 3% chance
+    if random.random() < 0.03:
         base_delay += random.uniform(25, 60)
         logger.warning(f"⚠️  Anomaly injected for route {route['id']}: {base_delay:.1f} min delay")
 
@@ -113,7 +126,7 @@ def generate_transit_event() -> dict:
     is_holiday = now.date() in US_HOLIDAYS
     special_event = random.random() < 0.05  # 5% chance of nearby event
 
-    delay = generate_delay(route, weather["condition"], peak, special_event)
+    delay = generate_delay(route, weather["condition"], peak, special_event, hour=now.hour)
 
     scheduled = now - timedelta(minutes=delay)
 
